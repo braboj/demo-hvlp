@@ -118,6 +118,7 @@ class HvlpBroker(threading.Thread):
                     )
 
                     t = threading.Thread(target=session.run, name=name)
+                    t.daemon = True
                     t.start()
 
                 # The accept timed-out

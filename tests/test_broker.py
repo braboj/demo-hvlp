@@ -1,15 +1,19 @@
 # coding: utf-8
 from hvlp.client import HvlpClient
+from hvlp.broker import HvlpBroker
 
 import threading
 from hvlp.errors import HvlpError
 import time
 
-BROKER_ADDR = '172.20.60.11'
 BROKER_ADDR = 'localhost'
-# BROKER_PORT = 60111
 BROKER_PORT = 65432
-N = 100
+
+# Burst size for the load tests. Kept modest because the broker's idle
+# busy-wait (issue #4 / R3) spins at ~245k loops/s and starves the sending
+# thread under GIL contention, making large bursts impractically slow until
+# that bug is fixed. Raise this once #4 is resolved.
+N = 20
 
 class TestCase(object):
 
@@ -222,17 +226,31 @@ class HVLP_NET_01_01_08(TestCase):
         self.producer.disconnect()
         time.sleep(0.05)
 
-tests = (
-    HVLP_NET_01_01_01(),
-    HVLP_NET_01_01_02(),
-    HVLP_NET_01_01_03(),
-    HVLP_NET_01_01_04(),
-    HVLP_NET_01_01_05(),
-    HVLP_NET_01_01_06(),
-    HVLP_NET_01_01_07(),
-    # HVLP_NET_01_01_08(),
-)
+if __name__ == "__main__":
 
-for test in tests:
-    test.execute()
-    print("Test {test} completed successfully.".format(test=test))
+    # Start a self-contained broker so the file no longer depends on an
+    # externally running broker, and guard execution so importing the module
+    # (e.g. by a test runner) does not spin up sockets as a side effect.
+    broker = HvlpBroker(port=BROKER_PORT)
+    broker.daemon = True
+    broker.start()
+    time.sleep(0.5)
+
+    tests = (
+        HVLP_NET_01_01_01(),
+        HVLP_NET_01_01_02(),
+        HVLP_NET_01_01_03(),
+        HVLP_NET_01_01_04(),
+        HVLP_NET_01_01_05(),
+        HVLP_NET_01_01_06(),
+        HVLP_NET_01_01_07(),
+        # HVLP_NET_01_01_08(),
+    )
+
+    try:
+        for test in tests:
+            test.execute()
+            print("Test {test} completed successfully.".format(test=test))
+    finally:
+        broker.stop()
+        broker.join()

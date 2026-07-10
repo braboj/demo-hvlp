@@ -19,7 +19,7 @@ def test_reset(register):
     register.reset()
     logging.info("After reset the register is {0}".format(register))
 
-    assert (register == {} and register.get_sessions() == [])
+    assert (register == {} and register.get_sessions() == set())
 
 
 def test_subscribe(register, session='test'):
@@ -42,7 +42,7 @@ def test_unsubscribe(register, session='test'):
     sessions = register.get_sessions()
     logging.info("After unsubscribe the registered sessions are {0}".format(sessions))
 
-    assert (sessions == [])
+    assert (sessions == set())
     register.reset()
 
 
@@ -51,12 +51,12 @@ def test_append(register):
     topics = ['test1', 'test2']
     client = 'test_client'
 
-    register.add_session(topics, client)
+    register.subscribe(topics, client)
     subscriptions = register.get_topics(client)
 
     logging.info("The client `{0}` is now subscribed to {1}".format(client, subscriptions))
 
-    assert (subscriptions == topics)
+    assert (subscriptions == set(topics))
     register.reset()
 
 
@@ -65,13 +65,13 @@ def test_remove(register):
     topics = ['test1', 'test2', 'test3']
     client = 'test_client'
 
-    register.add_session(topics, client)
-    register.remove_session(topics, client)
+    register.subscribe(topics, client)
+    register.unsubscribe(topics, client)
     subscriptions = register.get_topics(client)
 
     logging.info("The client `{0}` is now subscribed to {1}".format(client, subscriptions))
 
-    assert (subscriptions == [])
+    assert (subscriptions == set())
     register.reset()
 
 
@@ -80,7 +80,7 @@ def test_get_subscribers(register):
     topics = ['test1', 'test2']
     client = 'test_client'
 
-    register.add_session(topics, client)
+    register.subscribe(topics, client)
 
     for topic in topics:
         subscribers = register.get_subscribers(topic)
@@ -95,11 +95,11 @@ def test_get_topics(register):
     topics = ['test1', 'test2']
     client = 'test_client'
 
-    register.add_session(topics, client)
+    register.subscribe(topics, client)
     subscriptions = register.get_topics(client)
     logging.info("The client  `{0}` is subscribed to {1}".format(client, subscriptions))
 
-    assert (subscriptions == topics)
+    assert (subscriptions == set(topics))
     register.reset()
 
 
