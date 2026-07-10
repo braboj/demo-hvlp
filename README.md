@@ -12,33 +12,57 @@ demonstrate the use of OOP, SOLID principles, sockets and threading in Python.
 - Disconnect from a broker
 - Support for multiple clients
 
+## Requirements
+
+- Python 3.7 or newer
+- The dependencies in `requirements.txt` (currently just `six`)
+
+Install them, ideally into a virtual environment:
+
+```bash
+python -m venv .venv
+
+# Windows (PowerShell):
+.venv\Scripts\Activate.ps1
+# Linux / macOS:
+source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
 ## Project Setup
 
 ### 1. Clone the HVLP project
 
-Use a git client to clone the project from https://github.com/braboj/hvlp to
-a folder of your choice.
+Use a git client to clone the project from https://github.com/braboj/demo-hvlp
+to a folder of your choice.
 
 ### 2. Go to the project folder
 
-Type `cd <path to project folder>`
+Type `cd <path to project folder>` and install the dependencies as shown under
+[Requirements](#requirements).
 
 ### 3. Open a new command terminal for the broker
 
-Type `set PYTHONPATH=.` to add the root folder to the module search paths.
+From the project root, start the broker:
 
-Type `python broker.py <IP ADDR> <PORT>` to start the broker. If omitted the default IP is 127.0.0.1 and the default port is 65432.
+```bash
+python -m hvlp.broker <IP ADDR> <PORT>
+```
 
-![img.png](assets/images/broker_start.png)
+If the arguments are omitted, the default IP is `127.0.0.1` and the default
+port is `65432`.
 
 ### 4. Open a new command terminal for a client
 
-Type `set PYTHONPATH=.` to add the root folder to the module search paths.
+From the project root, start a client:
 
-Type `python client.py <SERVER ADDR> <PORT>` to start the client. If omitted the default server 
-address is 127.0.0.1 and the default port s 65432.
+```bash
+python -m hvlp.client <SERVER ADDR> <PORT>
+```
 
-![img.png](assets/images/client_start.png)
+If the arguments are omitted, the default server address is `127.0.0.1` and the
+default port is `65432`.
 
 ### 5. Connect the client to the broker
 
