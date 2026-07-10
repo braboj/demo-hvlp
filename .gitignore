@@ -8,3 +8,12 @@
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Virtual environments
+.venv/
+venv/
+
+# Test / coverage artifacts
+.coverage
+.pytest_cache/
+htmlcov/
