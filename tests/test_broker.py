@@ -9,11 +9,8 @@ import time
 BROKER_ADDR = 'localhost'
 BROKER_PORT = 65432
 
-# Burst size for the load tests. Kept modest because the broker's idle
-# busy-wait (issue #4 / R3) spins at ~245k loops/s and starves the sending
-# thread under GIL contention, making large bursts impractically slow until
-# that bug is fixed. Raise this once #4 is resolved.
-N = 20
+# Burst size for the load tests.
+N = 100
 
 class TestCase(object):
 

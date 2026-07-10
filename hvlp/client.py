@@ -308,24 +308,38 @@ class HvlpClient(threading.Thread):
         while not stop.is_set():
 
             try:
-                self.stream_in = self.sock.recv(BUFFER_SIZE)
+                data = self.sock.recv(BUFFER_SIZE)
 
-                while self.stream_in:
+                # An empty result means the broker closed the connection.
+                if not data:
+                    break
 
-                    # Parse a packet from the stream
-                    packet = Packet.from_bytes(self.stream_in)
+                # Accumulate: a packet may span multiple recv calls, so append
+                # instead of overwriting any buffered partial frame.
+                self.stream_in += data
 
-                    # Remove the packet bytes from the stream
-                    self.stream_in = self.stream_in[len(packet):]
+                # Drain every complete frame currently buffered.
+                while True:
+                    frame_len = Packet.next_frame_length(self.stream_in)
+
+                    # Wait for the rest of a partial frame
+                    if frame_len is None:
+                        break
+
+                    frame = bytes(self.stream_in[:frame_len])
+                    self.stream_in = self.stream_in[frame_len:]
+
+                    # A malformed frame is already consumed; log and resync.
+                    try:
+                        packet = Packet.from_bytes(frame)
+                    except HvlpError as e:
+                        self.log.error(e)
+                        continue
 
                     # Call the packet handler
                     self.on_packet(packet)
 
-            # Protocol related errors
-            except HvlpError as e:
-                self.log.error(e)
-
-            # Socket timed out in case it is non-blocking
+            # Socket timed out (non-blocking / timeout mode): keep waiting.
             except socket.timeout:
                 pass
 
@@ -502,7 +516,14 @@ class HvlpClientApp(HvlpClient):
         try:
             # Activate the new listener
             if argument == "start":
+
+                # Clear a terminate signal left set by a previous stop/disconnect,
+                # otherwise the new listener would exit immediately and the
+                # reconnected client would silently receive nothing.
+                self.terminate.clear()
+
                 self.listener = threading.Thread(target=self.listen, args=[self.terminate, ])
+                self.listener.daemon = True
                 self.listener.start()
 
             # Stop the active listener

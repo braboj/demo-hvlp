@@ -94,8 +94,12 @@ class HvlpBroker(threading.Thread):
         try:
 
             self.log.info("Broker started...")
+
+            # Allow the port to be re-bound immediately after a restart instead
+            # of failing with EADDRINUSE while the old socket lingers.
+            self.srv_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.srv_sock.bind((self.ip_addr, self.port))
-            self.srv_sock.listen(0)
+            self.srv_sock.listen(5)
 
             # Configure the socket on the server side to work in non-blocking mode
             # This allows the accept method in the broker loop to time-out and poll periodically
@@ -132,6 +136,13 @@ class HvlpBroker(threading.Thread):
         # Cleanup on unexpected exceptions
         finally:
             self.stop()
+
+            # Release the listening socket so the port is freed on shutdown.
+            try:
+                self.srv_sock.close()
+            except socket.error:
+                pass
+
             self.log.info("Broker exit...")
 
 

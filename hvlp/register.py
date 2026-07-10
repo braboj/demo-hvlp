@@ -128,8 +128,9 @@ class HvlpBrokerRegister(dict):
         # Ensure thread-safe access
         with self.__lock:
 
-            # Return a set of subscribers, empty if topic not found
-            return self.get(topic, set())
+            # Return a copy so callers can iterate without racing a concurrent
+            # subscribe/unsubscribe that mutates the internal set.
+            return set(self.get(topic, set()))
 
     def get_topics(self, client):
         """ Get all topics a specific client is subscribed to.
@@ -157,4 +158,7 @@ class HvlpBrokerRegister(dict):
 
         # Ensure thread-safe access
         with self.__lock:
-            return self.__sessions
+
+            # Return a copy so callers (e.g. broker shutdown) can iterate while
+            # sessions remove themselves without "set changed size" errors.
+            return set(self.__sessions)

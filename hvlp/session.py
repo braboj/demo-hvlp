@@ -76,8 +76,11 @@ class HvlpSession(Session):
         self.log = logging.getLogger(self.__class__.__name__)
         self.log.addHandler(logging.NullHandler())
 
-        # Connection attributes
+        # Connection attributes. A recv timeout lets the listener wake up
+        # periodically to notice the terminate signal and detect EOF instead
+        # of blocking forever on a dead socket.
         self.client = client
+        self.client.settimeout(1)
 
         # Session management
         self.register = register
@@ -176,7 +179,7 @@ class HvlpSession(Session):
 
             except socket.error:
                 self.log.debug("Client not accessible, deleting from the register")
-                self.register[packet.topic].unsubscribe(subscriber)
+                self.register.unsubscribe(topics=[packet.topic], client=subscriber)
 
     ###############################################################################################
 
@@ -222,18 +225,32 @@ class HvlpSession(Session):
             with self.lock:
                 stream_length = len(self.stream_in)
 
-            # self.log.debug("STREAM LENGTH = {0}".format(stream_length))
+            # Back-pressure: if the buffer is full, wait instead of spinning
+            # on recv-less loop iterations.
+            if stream_length >= MAX_STREAM_SIZE:
+                self.terminate.wait(0.05)
+                continue
 
             try:
-                if stream_length < MAX_STREAM_SIZE:
-                    data = self.client.recv(BUFFER_SIZE)
-                    with self.lock:
-                        self.stream_in += data
+                data = self.client.recv(BUFFER_SIZE)
 
-            # Ignore errors when the recv call did not return data on time
-            except socket.error as e:
-                if e.errno != self.ERROR_NO_DATA:
+                # An empty result means the peer closed the connection (EOF).
+                # Without this the session would spin forever on a dead socket.
+                if not data:
                     self.stop()
+                    break
+
+                with self.lock:
+                    self.stream_in += data
+
+            # A timeout just means no data arrived in the polling window.
+            except socket.timeout:
+                continue
+
+            # Any other socket error: the connection is gone.
+            except socket.error:
+                self.stop()
+                break
 
     ###############################################################################################
 
@@ -254,23 +271,35 @@ class HvlpSession(Session):
 
         # Start the data capture thread
         listener = threading.Thread(target=self.listen)
+        listener.daemon = True
         listener.start()
 
         while not self.terminate.is_set():
+
+            # Extract the next complete frame, if one has fully arrived.
+            with self.lock:
+                frame_len = Packet.next_frame_length(self.stream_in)
+                if frame_len is not None:
+                    frame = bytes(self.stream_in[:frame_len])
+                    self.stream_in = self.stream_in[frame_len:]
+                else:
+                    frame = None
+
+            # No complete frame yet: wait briefly instead of busy-spinning.
+            if frame is None:
+                self.terminate.wait(0.02)
+                continue
+
+            # A malformed frame is already consumed above, so discard it and
+            # resynchronise on the next frame instead of crashing or looping.
             try:
-                with self.lock:
-
-                    # Parse a packet from the stream
-                    packet = Packet.from_bytes(self.stream_in)
-
-                    # Remove the packet bytes from the stream
-                    self.stream_in = self.stream_in[len(packet):]
-
-                # Update the session state
-                self.update(packet)
-
+                packet = Packet.from_bytes(frame)
             except HvlpParsingError:
-                pass
+                self.log.debug("Discarding malformed frame")
+                continue
+
+            # Update the session state
+            self.update(packet)
 
         self.cleanup()
         self.log.debug("SESSION END")
@@ -297,10 +326,12 @@ class HvlpSession(Session):
             # Show the register before
             self.log.debug("Register before : {0}".format(self.register.get_sessions()))
 
-            # Remove the client connection from the registry
-            for topic in self.register.keys():
-                if self.client in self.register[topic]:
-                    self.register[topic].unsubscribe(self.client)
+            # Remove the client's subscriptions from the registry. get_topics
+            # returns a snapshot set, so this does not iterate the register
+            # while unsubscribe mutates it.
+            topics = self.register.get_topics(self.client)
+            if topics:
+                self.register.unsubscribe(topics=topics, client=self.client)
 
             # Show the register after
             self.log.debug("Register after : {0}".format(self.register.get_sessions()))

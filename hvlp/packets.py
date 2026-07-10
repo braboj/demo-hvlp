@@ -21,8 +21,21 @@ class Packet(object):
 
     def __init__(self, packet_id, payload):
         self.id = packet_id
+
+        # May raise ValueError if any element is not a byte (0-255)
+        payload = bytearray(payload)
+
+        # The LENGTH field is a single byte, so a frame carries at most 255
+        # payload bytes. Fail with a clear error instead of an opaque
+        # "byte must be in range(0, 256)" from to_bytes().
+        if len(payload) > 255:
+            raise HvlpPayloadFormatError(
+                reason="payload is {0} bytes; the 1-byte length field allows "
+                       "at most 255".format(len(payload))
+            )
+
         self.length = len(payload)
-        self.payload = bytearray(payload)
+        self.payload = payload
 
     def __len__(self):
         """ Return the object length """
@@ -98,11 +111,40 @@ class Packet(object):
             else:
                 packet = cls(packet_id=packet_id, payload=payload)
 
-        # The stream is empty
-        except IndexError:
+        # Empty/short stream (IndexError) or an undecodable / out-of-range
+        # payload (ValueError, which includes UnicodeDecodeError from an
+        # invalid UTF-8 topic) -> surface as a parse failure instead of letting
+        # it escape and crash the session thread.
+        except (IndexError, ValueError):
             raise HvlpParsingError
 
         return packet
+
+    @classmethod
+    def next_frame_length(cls, stream):
+        """ Total byte length of the complete frame at the head of `stream`.
+
+        A frame is ``[ID][LENGTH][PAYLOAD...]`` where LENGTH is the payload
+        size, so a full frame occupies ``LENGTH + PAYLOAD_OFFSET`` bytes.
+
+        Returns:
+            The frame length in bytes, or ``None`` if a complete frame has not
+            fully arrived yet (so the caller can wait for more bytes instead of
+            parsing a truncated frame).
+
+        """
+
+        # Not even the ID + LENGTH header has arrived
+        if len(stream) < cls.PAYLOAD_OFFSET:
+            return None
+
+        total = stream[cls.LENGTH_OFFSET] + cls.PAYLOAD_OFFSET
+
+        # The payload is still incomplete
+        if len(stream) < total:
+            return None
+
+        return total
 
 
 ###################################################################################################
